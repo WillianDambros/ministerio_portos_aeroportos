@@ -1,0 +1,122 @@
+########################################### movimentação voos ##################
+
+# Elementos Console   " $0.click()  "  Rede
+ 
+"https://horus.labtrans.ufsc.br/api///Files/DadosCompletosMovimentacao.csv"
+
+
+movimentacao_voo <- read.csv2(paste0("https://horus.labtrans.ufsc.br/api///",
+                                     "Files/DadosCompletosMovimentacao.csv"))
+
+movimentacao_voo |> dplyr::glimpse()
+
+movimentacao_voo <- movimentacao_voo |>
+  tidyr::separate(Município.UF, into = c("municipio", "uf"),
+                  sep = "/", remove = T)
+
+
+movimentacao_voo |> dplyr::filter(uf == "MT") |> dplyr::glimpse()
+
+movimentacao_voo |> dplyr::filter(uf == "MT") |> dplyr::select(municipio) |>
+  unique()
+
+#########
+#movimentacao_voo <- movimentacao_voo |> dplyr::filter(uf == "MT")
+
+movimentacao_voo <- movimentacao_voo |>
+  dplyr::mutate(municipio_join =
+                  gsub("[^[:alnum:] ]", "", iconv(municipio,
+                                                  to = "ASCII//TRANSLIT"))) |>
+  dplyr::mutate(
+    municipio_join = toupper(municipio_join)
+  )                                              
+
+movimentacao_voo |> dplyr::glimpse()
+
+
+####################################### Compilado_Decodificador ################
+
+compilado_decodificador_endereço <-
+  paste0("https://github.com/WillianDambros/data_source/raw/",
+         "refs/heads/main/compilado_decodificador.xlsx")
+
+decodificador_endereco <- paste0(getwd(), "/compilado_decodificador.xlsx")
+
+curl::curl_download(compilado_decodificador_endereço,
+                    decodificador_endereco)
+
+"compilado_decodificador.xlsx" |> readxl::excel_sheets()
+
+territorialidade_sedec <- 
+  readxl::read_excel("compilado_decodificador.xlsx",
+                     sheet =  "territorialidade_municipios_mt",
+                     col_types = "text") |>
+  dplyr::select("territorio_geo_munícipios",
+                "rpseplan10340_regiao_decodificado",
+                "imeia_regiao",
+                "territorio_latitude", "territorio_longitude")
+
+territorialidade_sedec <- territorialidade_sedec |>
+  dplyr::rename(municipios_decodificado = territorio_geo_munícipios)
+
+territorialidade_sedec |> dplyr::glimpse()
+##########################################
+territorialidade_sedec <- territorialidade_sedec |>
+  dplyr::mutate(
+    municipios_decodificado = toupper(municipios_decodificado),
+    territorio_latitude = as.numeric(gsub(",", ".", territorio_latitude)),
+    territorio_longitude = as.numeric(gsub(",", ".", territorio_longitude))
+  )
+
+territorialidade_sedec <- territorialidade_sedec |>
+  dplyr::mutate(municipios_decodificado =
+                  gsub("[^[:alnum:] ]", "", iconv(municipios_decodificado,
+                                                  to = "ASCII//TRANSLIT")))
+territorialidade_sedec |> dplyr::glimpse()
+
+territorialidade_sedec <- territorialidade_sedec |>
+  dplyr::mutate(
+    municipios_decodificado = toupper(municipios_decodificado),
+    territorio_latitude = as.numeric(gsub(",", ".", territorio_latitude)),
+    territorio_longitude = as.numeric(gsub(",", ".", territorio_longitude))
+  )                                              
+
+territorialidade_sedec |> dplyr::glimpse()
+
+#######################################################################
+
+movimentacao_voo_mt <- movimentacao_voo |>
+  dplyr::filter(uf == "MT") |>
+  fuzzyjoin::stringdist_left_join(
+    territorialidade_sedec,
+    by = c("municipio_join" = "municipios_decodificado"),
+    method = "jw",          # Jaro-Winkler
+    max_dist = 0.05,        # tolerância de distância
+    distance_col = "dist"   # coluna com a distância calculada
+  )
+
+movimentacao_voo_sem_mt <- movimentacao_voo |> dplyr::filter(uf != "MT")
+
+movimentacao_voo <- movimentacao_voo_mt |>
+  dplyr::bind_rows(movimentacao_voo_sem_mt)
+
+movimentacao_voo |> dplyr::glimpse()
+
+# writing PostgreSQL
+
+source("X:/POWER BI/NOVOCAGED/conexao.R")
+
+RPostgres::dbListTables(conexao)
+
+schema_name <- "ministerio_portos_aeroportos"
+
+table_name <- "movimentacao_voo"
+
+DBI::dbSendQuery(conexao, paste0("CREATE SCHEMA IF NOT EXISTS ", schema_name))
+
+RPostgres::dbWriteTable(conexao,
+                        name = DBI::Id(schema = schema_name,table = table_name),
+                        value = movimentacao_voo,
+                        row.names = FALSE, overwrite = TRUE)
+
+RPostgres::dbDisconnect(conexao)
