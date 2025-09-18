@@ -100,7 +100,24 @@ movimentacao_voo_sem_mt <- movimentacao_voo |> dplyr::filter(uf != "MT")
 movimentacao_voo <- movimentacao_voo_mt |>
   dplyr::bind_rows(movimentacao_voo_sem_mt)
 
-movimentacao_voo |> dplyr::glimpse()
+ movimentacao_voo <- movimentacao_voo |> dplyr::mutate(
+  data_mes = lubridate::make_date(year = Ano,
+  month = dplyr::case_when(
+    Mês == "Janeiro"   ~ 01,
+    Mês == "Fevereiro" ~ 02,
+    Mês == "Março"     ~ 03,
+    Mês == "Abril"     ~ 04,
+    Mês == "Maio"      ~ 05,
+    Mês == "Junho"     ~ 06,
+    Mês == "Julho"     ~ 07,
+    Mês == "Agosto"    ~ 08,
+    Mês == "Setembro"  ~ 09,
+    Mês == "Outubro"   ~ 10,
+    Mês == "Novembro"  ~ 11,
+    Mês == "Dezembro"  ~ 12
+  ),
+  day = 01)
+)
 
 # writing PostgreSQL
 
